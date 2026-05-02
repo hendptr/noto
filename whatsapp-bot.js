@@ -52,14 +52,6 @@ async function initDB() {
 }
 
 async function processMessageWithGemini(message, client) {
-  const settings = await Settings.findOne({ id: 'global' });
-  const targetNumber = settings.whatsappNumber;
-  
-  // Only process if it's from the target number
-  if (targetNumber && !message.from.includes(targetNumber)) {
-    return;
-  }
-
   try {
     let prompt = `You are a helpful personal assistant bot for the Noto app. The user is sending you a message. 
     Analyze the message. Is it a request to create a Todo/Reminder, or an Expense?
@@ -203,15 +195,29 @@ async function startBot() {
     job.start();
   });
 
-  client.on('message_create', async msg => {
+  client.on('message', async msg => {
     const settings = await Settings.findOne({ id: 'global' });
-    const targetNumber = settings?.whatsappNumber;
+    let targetNumber = settings?.whatsappNumber;
     
-    // Only process messages sent to the user's own number (Chatting with yourself)
-    if (targetNumber && msg.to.includes(targetNumber)) {
-       // Prevent infinite loops if the bot replies to itself
-       if (msg.body.startsWith('✅') || msg.body.startsWith('💸') || msg.body.startsWith('🔔') || msg.body.startsWith('Sorry')) return;
+    if (!targetNumber) {
+        console.log('Received message, but no target number configured in settings.');
+        return;
+    }
+
+    // Clean up user input (e.g., if they put 0812 instead of 62812)
+    targetNumber = targetNumber.replace(/\D/g, '');
+    if (targetNumber.startsWith('0')) {
+        targetNumber = targetNumber.substring(1); // strip leading 0 to match 62...
+    }
+
+    const sender = msg.from.replace(/\D/g, '');
+    
+    // Only process messages from the target number
+    if (sender.includes(targetNumber)) {
+       console.log('Command received from owner! Processing with Gemini...');
        await processMessageWithGemini(msg, client);
+    } else {
+       console.log(`Ignored message from unauthorized number: ${msg.from}`);
     }
   });
 
