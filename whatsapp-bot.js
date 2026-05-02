@@ -31,6 +31,7 @@ const ExpenseSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   description: { type: String, required: true },
   category: { type: String, default: 'Uncategorized' },
+  currency: { type: String, enum: ['IDR', 'JPY'], default: 'IDR' },
   date: { type: Date, default: Date.now },
   source: { type: String, enum: ['manual', 'whatsapp-ai'], default: 'manual' }
 });
@@ -57,7 +58,7 @@ async function processMessageWithGemini(message, client) {
     Analyze the message. Is it a request to create a Todo/Reminder, or an Expense?
     Respond ONLY in JSON format:
     For Todo: { "type": "todo", "task": "string", "dueDate": "ISO Date string or null", "recurrence": "none|daily|weekly|mon-fri", "reply": "A friendly confirmation message" }
-    For Expense: { "type": "expense", "amount": number, "description": "string", "category": "string", "reply": "A friendly confirmation message" }
+    For Expense: { "type": "expense", "amount": number, "description": "string", "category": "Food|Transport|Shopping|Utilities|Other", "currency": "IDR|JPY", "reply": "A friendly confirmation message" }
     Message: "${message.body}"`;
 
     let response;
@@ -67,8 +68,8 @@ async function processMessageWithGemini(message, client) {
       const media = await message.downloadMedia();
       if (media.mimetype.startsWith('image/')) {
         prompt = `You are an AI expense tracker. Read this receipt/image. 
-        Extract the total amount, description (store name), and best category.
-        Respond ONLY in JSON: { "type": "expense", "amount": number, "description": "string", "category": "string", "reply": "Friendly confirmation" }`;
+        Extract the total amount, description (store name), best category, and detect the currency (Yen or Rupiah).
+        Respond ONLY in JSON: { "type": "expense", "amount": number, "description": "string", "category": "Food|Transport|Shopping|Utilities|Other", "currency": "IDR|JPY", "reply": "Friendly confirmation" }`;
         
         response = await ai.models.generateContent({
             model: 'gemini-1.5-flash',
@@ -105,6 +106,7 @@ async function processMessageWithGemini(message, client) {
         amount: data.amount,
         description: data.description,
         category: data.category,
+        currency: data.currency || 'IDR',
         source: 'whatsapp-ai'
       });
       await newExpense.save();
@@ -117,57 +119,71 @@ async function processMessageWithGemini(message, client) {
   }
 }
 
+let isCheckingReminders = false;
+
 async function checkReminders(client) {
-  const settings = await Settings.findOne({ id: 'global' });
-  const targetNumber = settings?.whatsappNumber;
-  
-  if (!targetNumber || settings.whatsappStatus !== 'connected') return;
+  if (isCheckingReminders) return; // Prevent overlapping cron jobs
+  isCheckingReminders = true;
 
-  const now = new Date();
-  
-  // Find todos with unsent reminders whose time has passed
-  const todos = await Todo.find({
-    status: 'pending',
-    'reminders.sent': false,
-    'reminders.time': { $lte: now }
-  });
+  try {
+    const settings = await Settings.findOne({ id: 'global' });
+    const targetNumber = settings?.whatsappNumber;
+    
+    if (!targetNumber || settings.whatsappStatus !== 'connected') return;
 
-  for (let todo of todos) {
-    let updated = false;
-    for (let reminder of todo.reminders) {
-      if (!reminder.sent && reminder.time <= now) {
-        // Send WhatsApp Message
-        const chatId = targetNumber.includes('@c.us') ? targetNumber : `${targetNumber}@c.us`;
-        try {
-          await client.sendMessage(chatId, `🔔 *Reminder:* ${todo.task}`);
-          reminder.sent = true;
-          updated = true;
-        } catch (e) {
-          console.error('Failed to send WA reminder:', e);
+    const now = new Date();
+    
+    // Find todos with unsent reminders whose time has passed
+    const todos = await Todo.find({
+      status: 'pending',
+      'reminders.sent': false,
+      'reminders.time': { $lte: now }
+    });
+
+    for (let todo of todos) {
+      let updated = false;
+      for (let reminder of todo.reminders) {
+        if (!reminder.sent && reminder.time <= now) {
+          // Send WhatsApp Message
+          const chatId = targetNumber.includes('@c.us') ? targetNumber : `${targetNumber}@c.us`;
+          try {
+            await client.sendMessage(chatId, `🔔 *Reminder:* ${todo.task}`);
+            reminder.sent = true;
+            updated = true;
+          } catch (e) {
+            console.error('Failed to send WA reminder:', e);
+          }
         }
       }
-    }
-    
-    // Handle recurrence
-    if (todo.recurrence !== 'none' && updated) {
-        // Simple logic for recurring: push a new reminder for tomorrow/next week
-        const lastReminder = todo.reminders[todo.reminders.length - 1].time;
-        const nextTime = new Date(lastReminder);
-        if (todo.recurrence === 'daily') nextTime.setDate(nextTime.getDate() + 1);
-        if (todo.recurrence === 'weekly') nextTime.setDate(nextTime.getDate() + 7);
-        if (todo.recurrence === 'mon-fri') {
-            do {
-                nextTime.setDate(nextTime.getDate() + 1);
-            } while (nextTime.getDay() === 0 || nextTime.getDay() === 6);
-        }
-        
-        todo.reminders.push({ time: nextTime, sent: false });
-        todo.dueDate = nextTime;
-    } else if (todo.recurrence === 'none' && updated) {
-        todo.status = 'completed';
-    }
+      
+      // Handle recurrence
+      if (todo.recurrence !== 'none' && updated) {
+          const lastReminder = todo.reminders[todo.reminders.length - 1].time;
+          const nextTime = new Date(lastReminder);
+          if (todo.recurrence === 'daily') nextTime.setDate(nextTime.getDate() + 1);
+          if (todo.recurrence === 'weekly') nextTime.setDate(nextTime.getDate() + 7);
+          if (todo.recurrence === 'mon-fri') {
+              do {
+                  nextTime.setDate(nextTime.getDate() + 1);
+              } while (nextTime.getDay() === 0 || nextTime.getDay() === 6);
+          }
+          
+          todo.reminders.push({ time: nextTime, sent: false });
+          todo.dueDate = nextTime;
+      } else if (todo.recurrence === 'none' && updated) {
+          todo.status = 'completed';
+      }
 
-    if (updated) await todo.save();
+      if (updated) {
+        // Find and update atomically to prevent double sends if 2 node instances are running
+        await Todo.findOneAndUpdate(
+          { _id: todo._id, status: 'pending' },
+          { $set: { status: todo.status, reminders: todo.reminders, dueDate: todo.dueDate } }
+        );
+      }
+    }
+  } finally {
+    isCheckingReminders = false;
   }
 }
 
@@ -196,28 +212,30 @@ async function startBot() {
   });
 
   client.on('message', async msg => {
+    console.log(`\n--- RAW MESSAGE RECEIVED ---`);
+    console.log(`From: ${msg.from}`);
+    console.log(`Body: ${msg.body.substring(0, 50)}...`);
+
     const settings = await Settings.findOne({ id: 'global' });
     let targetNumber = settings?.whatsappNumber;
     
     if (!targetNumber) {
-        console.log('Received message, but no target number configured in settings.');
+        console.log('Ignored: No target number configured in settings.');
         return;
     }
 
-    // Clean up user input (e.g., if they put 0812 instead of 62812)
     targetNumber = targetNumber.replace(/\D/g, '');
     if (targetNumber.startsWith('0')) {
-        targetNumber = targetNumber.substring(1); // strip leading 0 to match 62...
+        targetNumber = targetNumber.substring(1);
     }
 
     const sender = msg.from.replace(/\D/g, '');
     
-    // Only process messages from the target number
     if (sender.includes(targetNumber)) {
-       console.log('Command received from owner! Processing with Gemini...');
+       console.log('✅ Command authorized! Processing with Gemini...');
        await processMessageWithGemini(msg, client);
     } else {
-       console.log(`Ignored message from unauthorized number: ${msg.from}`);
+       console.log(`❌ Ignored message from unauthorized number: ${msg.from}`);
     }
   });
 

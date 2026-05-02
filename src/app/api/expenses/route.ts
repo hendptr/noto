@@ -15,6 +15,7 @@ export async function POST(req: Request) {
     amount: data.amount,
     description: data.description,
     category: data.category || 'Uncategorized',
+    currency: data.currency || 'IDR',
     source: 'manual'
   });
   await newExpense.save();
