@@ -171,6 +171,8 @@ async function checkReminders(client) {
         
         todo.reminders.push({ time: nextTime, sent: false });
         todo.dueDate = nextTime;
+    } else if (todo.recurrence === 'none' && updated) {
+        todo.status = 'completed';
     }
 
     if (updated) await todo.save();
@@ -201,8 +203,16 @@ async function startBot() {
     job.start();
   });
 
-  client.on('message', async msg => {
-    await processMessageWithGemini(msg, client);
+  client.on('message_create', async msg => {
+    const settings = await Settings.findOne({ id: 'global' });
+    const targetNumber = settings?.whatsappNumber;
+    
+    // Only process messages sent to the user's own number (Chatting with yourself)
+    if (targetNumber && msg.to.includes(targetNumber)) {
+       // Prevent infinite loops if the bot replies to itself
+       if (msg.body.startsWith('✅') || msg.body.startsWith('💸') || msg.body.startsWith('🔔') || msg.body.startsWith('Sorry')) return;
+       await processMessageWithGemini(msg, client);
+    }
   });
 
   client.on('disconnected', async () => {
