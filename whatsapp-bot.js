@@ -43,7 +43,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 async function initDB() {
   await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
   console.log('MongoDB Connected');
-  
+
   // Create default settings if not exists
   let settings = await Settings.findOne({ id: 'global' });
   if (!settings) {
@@ -54,68 +54,135 @@ async function initDB() {
 
 async function processMessageWithGemini(message, client) {
   try {
-    let prompt = `You are a helpful personal assistant bot for the Noto app. The user is sending you a message. 
-    Analyze the message. Is it a request to create a Todo/Reminder, or an Expense?
-    Respond ONLY in JSON format:
-    For Todo: { "type": "todo", "task": "string", "dueDate": "ISO Date string or null", "recurrence": "none|daily|weekly|mon-fri", "reply": "A friendly confirmation message" }
-    For Expense: { "type": "expense", "amount": number, "description": "string", "category": "Food|Transport|Shopping|Utilities|Other", "currency": "IDR|JPY", "reply": "A friendly confirmation message" }
-    Message: "${message.body}"`;
+    const nowISO = new Date().toISOString();
+
+    const textPrompt = `You are a helpful personal assistant bot for the Noto app. The user is sending you a message.
+Today's date and time is: ${nowISO} (UTC+7 Asia/Jakarta, so add 7 hours for local time context).
+
+Analyze the message. It may contain ONE or MULTIPLE expenses or todos in a single sentence.
+
+Rules:
+- ALWAYS return a valid JSON array, even for just one item.
+- Parse natural language dates like "today", "yesterday", "last night", "tadi", "kemarin", specific dates, etc. and return as an ISO 8601 date string. Default to today if not mentioned.
+- For multiple spending items in one message, create ONE expense entry per item.
+- Detect currency: Yen/¥/JPY → "JPY", Rupiah/Rp/IDR → "IDR". Default to "JPY" if unclear (user lives in Japan).
+
+Return ONLY a raw JSON array (no markdown, no backticks) structured exactly like this:
+[
+  { "type": "expense", "amount": 500, "description": "Cake at Lawson", "category": "Food", "currency": "JPY", "date": "2026-05-02T00:00:00.000Z" },
+  { "type": "expense", "amount": 300, "description": "Milk", "category": "Food", "currency": "JPY", "date": "2026-05-02T00:00:00.000Z" },
+  { "type": "todo", "task": "Buy groceries", "dueDate": "2026-05-03T09:00:00.000Z", "recurrence": "none" },
+  { "type": "reply", "message": "✅ Saved today's spending:\n• Coffee and bread — ¥450 (Food)\n• Transport — ¥1,000 (Transport)\nTotal: ¥1,450 for today!" }
+]
+
+The LAST element MUST always be { "type": "reply", "message": "..." }.
+The reply MUST be itemized — list every expense with its amount+currency+category, every todo task name. End with a total if there are expenses.
+
+User message: "${message.body}"`;
 
     let response;
-    
+
     // If the message has an image (receipt)
     if (message.hasMedia) {
       const media = await message.downloadMedia();
       if (media.mimetype.startsWith('image/')) {
-        prompt = `You are an AI expense tracker. Read this receipt/image. 
-        Extract the total amount, description (store name), best category, and detect the currency (Yen or Rupiah).
-        Respond ONLY in JSON: { "type": "expense", "amount": number, "description": "string", "category": "Food|Transport|Shopping|Utilities|Other", "currency": "IDR|JPY", "reply": "Friendly confirmation" }`;
-        
+        const imagePrompt = `You are an AI expense tracker. Today's date and time is: ${nowISO}.
+Read this receipt/image. Extract:
+- Total amount paid
+- Store/vendor name as description
+- Best category (Food/Transport/Shopping/Utilities/Other)
+- Currency: Yen/¥ → "JPY", Rupiah/Rp → "IDR". Default "JPY" if unclear.
+- Date: use the date printed on the receipt if visible, otherwise today.
+
+Return ONLY a raw JSON array (no markdown):
+[
+  { "type": "expense", "amount": 500, "description": "Store Name", "category": "Food", "currency": "JPY", "date": "ISO date string" },
+  { "type": "reply", "message": "Friendly confirmation of what was logged" }
+]`;
+
         response = await ai.models.generateContent({
-            model: 'gemini-1.5-flash',
-            contents: [
-                prompt,
+          model: 'gemini-flash-latest',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: imagePrompt },
                 { inlineData: { data: media.data, mimeType: media.mimetype } }
-            ]
+              ]
+            }
+          ]
         });
       }
     } else {
-      // Text only
       response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: prompt
+        model: 'gemini-flash-latest',
+        contents: textPrompt
       });
     }
 
-    if (!response || !response.text) return;
-    
-    let jsonStr = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const data = JSON.parse(jsonStr);
-
-    if (data.type === 'todo') {
-      const newTodo = new Todo({
-        task: data.task,
-        dueDate: data.dueDate ? new Date(data.dueDate) : new Date(),
-        recurrence: data.recurrence || 'none',
-        reminders: [{ time: data.dueDate ? new Date(data.dueDate) : new Date(), sent: false }]
-      });
-      await newTodo.save();
-      client.sendMessage(message.from, `✅ ${data.reply}`);
-    } else if (data.type === 'expense') {
-      const newExpense = new Expense({
-        amount: data.amount,
-        description: data.description,
-        category: data.category,
-        currency: data.currency || 'IDR',
-        source: 'whatsapp-ai'
-      });
-      await newExpense.save();
-      client.sendMessage(message.from, `💸 ${data.reply}`);
+    if (!response) {
+      console.log('No response from Gemini (media was not an image?)');
+      return;
     }
+
+    const rawText = response.text;
+    console.log('Gemini raw response:', rawText);
+
+    if (!rawText) {
+      console.error('Gemini returned empty text. Full response:', JSON.stringify(response.candidates));
+      await client.sendMessage(message.from, "Sorry, I couldn't understand that right now. 😔");
+      return;
+    }
+
+    let jsonStr = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const items = JSON.parse(jsonStr);
+
+    if (!Array.isArray(items)) {
+      throw new Error('Gemini did not return a JSON array');
+    }
+
+    let replyMessage = '';
+    let savedCount = 0;
+
+    for (const item of items) {
+      if (item.type === 'reply') {
+        replyMessage = item.message;
+        continue;
+      }
+
+      if (item.type === 'todo') {
+        const dueDate = item.dueDate ? new Date(item.dueDate) : new Date();
+        const newTodo = new Todo({
+          task: item.task,
+          dueDate: dueDate,
+          recurrence: item.recurrence || 'none',
+          reminders: [{ time: dueDate, sent: false }]
+        });
+        await newTodo.save();
+        console.log(`✅ Todo saved: "${item.task}" due ${dueDate.toISOString()}`);
+        savedCount++;
+      } else if (item.type === 'expense') {
+        const expenseDate = item.date ? new Date(item.date) : new Date();
+        const newExpense = new Expense({
+          amount: item.amount,
+          description: item.description,
+          category: item.category || 'Other',
+          currency: item.currency || 'JPY',
+          date: expenseDate,
+          source: 'whatsapp-ai'
+        });
+        await newExpense.save();
+        console.log(`💸 Expense saved: ${item.currency} ${item.amount} — "${item.description}" on ${expenseDate.toDateString()}`);
+        savedCount++;
+      }
+    }
+
+    const finalReply = replyMessage || `✅ Saved ${savedCount} item(s)!`;
+    await client.sendMessage(message.from, finalReply);
 
   } catch (error) {
-    console.error('Gemini error:', error);
-    client.sendMessage(message.from, "Sorry, I couldn't process that right now. 😔");
+    console.error('Gemini processing error:', error);
+    await client.sendMessage(message.from, "Sorry, I couldn't process that right now. 😔");
   }
 }
 
@@ -128,60 +195,86 @@ async function checkReminders(client) {
   try {
     const settings = await Settings.findOne({ id: 'global' });
     const targetNumber = settings?.whatsappNumber;
-    
+
     if (!targetNumber || settings.whatsappStatus !== 'connected') return;
 
     const now = new Date();
-    
-    // Find todos with unsent reminders whose time has passed
+
+    // Use $elemMatch to ensure the SAME reminder element matches BOTH conditions
     const todos = await Todo.find({
       status: 'pending',
-      'reminders.sent': false,
-      'reminders.time': { $lte: now }
+      reminders: {
+        $elemMatch: {
+          sent: false,
+          time: { $lte: now }
+        }
+      }
     });
 
     for (let todo of todos) {
       let updated = false;
       for (let reminder of todo.reminders) {
         if (!reminder.sent && reminder.time <= now) {
-          // Send WhatsApp Message
           const chatId = targetNumber.includes('@c.us') ? targetNumber : `${targetNumber}@c.us`;
           try {
             await client.sendMessage(chatId, `🔔 *Reminder:* ${todo.task}`);
             reminder.sent = true;
             updated = true;
+            console.log(`✅ Reminder sent for: "${todo.task}"`);
           } catch (e) {
             console.error('Failed to send WA reminder:', e);
           }
         }
       }
-      
-      // Handle recurrence
-      if (todo.recurrence !== 'none' && updated) {
-          const lastReminder = todo.reminders[todo.reminders.length - 1].time;
-          const nextTime = new Date(lastReminder);
-          if (todo.recurrence === 'daily') nextTime.setDate(nextTime.getDate() + 1);
-          if (todo.recurrence === 'weekly') nextTime.setDate(nextTime.getDate() + 7);
-          if (todo.recurrence === 'mon-fri') {
-              do {
-                  nextTime.setDate(nextTime.getDate() + 1);
-              } while (nextTime.getDay() === 0 || nextTime.getDay() === 6);
-          }
-          
-          todo.reminders.push({ time: nextTime, sent: false });
-          todo.dueDate = nextTime;
-      } else if (todo.recurrence === 'none' && updated) {
-          todo.status = 'completed';
+
+      if (!updated) continue;
+
+      let newStatus = todo.status;
+      let newDueDate = todo.dueDate;
+      let newReminders = [...todo.reminders];
+
+      if (todo.recurrence !== 'none') {
+        const lastReminder = todo.reminders[todo.reminders.length - 1].time;
+        const nextTime = new Date(lastReminder);
+
+        if (todo.recurrence === 'daily') {
+          nextTime.setDate(nextTime.getDate() + 1);
+        } else if (todo.recurrence === 'weekly') {
+          nextTime.setDate(nextTime.getDate() + 7);
+        } else if (todo.recurrence === 'mon-fri') {
+          do { nextTime.setDate(nextTime.getDate() + 1); }
+          while (nextTime.getDay() === 0 || nextTime.getDay() === 6);
+        } else if (todo.recurrence === 'mon-wed-fri') {
+          const valid = [1, 3, 5];
+          do { nextTime.setDate(nextTime.getDate() + 1); }
+          while (!valid.includes(nextTime.getDay()));
+        } else if (todo.recurrence === 'tue-thu') {
+          const valid = [2, 4];
+          do { nextTime.setDate(nextTime.getDate() + 1); }
+          while (!valid.includes(nextTime.getDay()));
+        } else if (todo.recurrence === 'custom' && todo.customDays?.length > 0) {
+          do { nextTime.setDate(nextTime.getDate() + 1); }
+          while (!todo.customDays.includes(nextTime.getDay()));
+        }
+
+        newReminders.push({ time: nextTime, sent: false });
+        newDueDate = nextTime;
+        console.log(`🔁 Next "${todo.recurrence}" reminder scheduled for: ${nextTime.toISOString()}`);
+      } else {
+        newStatus = 'completed';
+        console.log(`✅ Todo completed: "${todo.task}"`);
       }
 
-      if (updated) {
-        // Find and update atomically to prevent double sends if 2 node instances are running
-        await Todo.findOneAndUpdate(
-          { _id: todo._id, status: 'pending' },
-          { $set: { status: todo.status, reminders: todo.reminders, dueDate: todo.dueDate } }
-        );
-      }
+      await Todo.findByIdAndUpdate(todo._id, {
+        $set: {
+          status: newStatus,
+          reminders: newReminders,
+          dueDate: newDueDate
+        }
+      });
     }
+  } catch (err) {
+    console.error('checkReminders error:', err);
   } finally {
     isCheckingReminders = false;
   }
@@ -203,40 +296,33 @@ async function startBot() {
   client.on('ready', async () => {
     console.log('Client is ready!');
     await Settings.findOneAndUpdate({ id: 'global' }, { whatsappQr: '', whatsappStatus: 'connected' });
-    
+
     // Start Cron Job for Reminders (every minute)
     const job = new cron.CronJob('* * * * *', () => {
       checkReminders(client);
     });
     job.start();
+    console.log('⏰ Reminder cron job started (checks every minute)');
   });
 
   client.on('message', async msg => {
     console.log(`\n--- RAW MESSAGE RECEIVED ---`);
     console.log(`From: ${msg.from}`);
-    console.log(`Body: ${msg.body.substring(0, 50)}...`);
+    console.log(`Body: ${msg.body ? msg.body.substring(0, 100) : '[no text body]'}`);
+    console.log(`Has Media: ${msg.hasMedia}`);
 
-    const settings = await Settings.findOne({ id: 'global' });
-    let targetNumber = settings?.whatsappNumber;
-    
-    if (!targetNumber) {
-        console.log('Ignored: No target number configured in settings.');
-        return;
+    // Ignore messages from status broadcasts and groups
+    if (msg.from === 'status@broadcast') {
+      console.log('Ignored: Status broadcast message.');
+      return;
+    }
+    if (msg.from.endsWith('@g.us')) {
+      console.log('Ignored: Group message.');
+      return;
     }
 
-    targetNumber = targetNumber.replace(/\D/g, '');
-    if (targetNumber.startsWith('0')) {
-        targetNumber = targetNumber.substring(1);
-    }
-
-    const sender = msg.from.replace(/\D/g, '');
-    
-    if (sender.includes(targetNumber)) {
-       console.log('✅ Command authorized! Processing with Gemini...');
-       await processMessageWithGemini(msg, client);
-    } else {
-       console.log(`❌ Ignored message from unauthorized number: ${msg.from}`);
-    }
+    console.log('✅ Processing with Gemini...');
+    await processMessageWithGemini(msg, client);
   });
 
   client.on('disconnected', async () => {

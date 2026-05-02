@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import Link from 'next/link';
 
 export default function WhatsAppSettings() {
   const [settings, setSettings] = useState<any>(null);
@@ -40,7 +41,12 @@ export default function WhatsAppSettings() {
 
   return (
     <div className="max-w-2xl mx-auto py-20 px-8">
-      <h1 className="text-3xl font-serif text-[#2c2c2c] mb-2">WhatsApp Bot Configuration</h1>
+      <div className="flex justify-between items-start mb-2">
+        <h1 className="text-3xl font-serif text-[#2c2c2c]">WhatsApp Bot Configuration</h1>
+        <Link href="/" className="text-[#8C7A6B] hover:text-[#2c2c2c] transition-colors text-sm font-medium">
+          ← Back to Diary
+        </Link>
+      </div>
       <p className="text-[#8C7A6B] mb-10">Scan the QR code below to connect the Noto AI bot to your WhatsApp account.</p>
 
       <div className="bg-white/50 backdrop-blur-xl border border-white/40 p-8 rounded-2xl shadow-xl mb-8">

@@ -28,7 +28,8 @@ export default function Dashboard() {
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [onThisDayEntry, setOnThisDayEntry] = useState<any>(null);
-  const [streak, setStreak] = useState<number>(0);
+  const [dashboardNote, setDashboardNote] = useState('');
+  const [noteSaveTimer, setNoteSaveTimer] = useState<any>(null);
   
   // Search State
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -56,11 +57,24 @@ export default function Dashboard() {
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   useEffect(() => {
-    // Fetch Streak
-    fetch('/api/streak').then(res => res.json()).then(json => {
-      if (json.streak !== undefined) setStreak(json.streak);
+    // Fetch dashboard note
+    fetch('/api/settings/note').then(res => res.json()).then(json => {
+      if (json.dashboardNote !== undefined) setDashboardNote(json.dashboardNote);
     });
   }, []);
+
+  const handleNoteChange = (val: string) => {
+    setDashboardNote(val);
+    if (noteSaveTimer) clearTimeout(noteSaveTimer);
+    const timer = setTimeout(() => {
+      fetch('/api/settings/note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dashboardNote: val }),
+      });
+    }, 1000);
+    setNoteSaveTimer(timer);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -211,11 +225,6 @@ export default function Dashboard() {
       {/* Top Navigation Bar */}
       <nav className="flex justify-between p-6 max-w-6xl mx-auto relative z-40 print:hidden">
         <div className="flex items-center">
-          {streak > 0 && (
-            <div className="flex items-center text-sm font-bold text-[#e74c3c] tracking-widest uppercase bg-[#e74c3c]/10 px-4 py-1.5 rounded-full">
-              <Flame className="w-4 h-4 mr-2" /> {streak} Day Streak
-            </div>
-          )}
         </div>
         <div className="flex items-center space-x-6">
           <Link href="/tasks" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
@@ -315,6 +324,28 @@ export default function Dashboard() {
                  {saveStatus === 'saved' && 'All changes saved'}
                  {saveStatus === 'idle' && 'Auto-save is on'}
                </span>
+            </div>
+
+            {/* Sticky Note Widget */}
+            <div className="mt-6 print:hidden">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-[#8C7A6B]">📌 Pinned Note</span>
+                {dashboardNote && (
+                  <button
+                    onClick={() => handleNoteChange('')}
+                    className="text-[10px] text-[#C4BCB3] hover:text-red-400 transition-colors uppercase tracking-widest"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={dashboardNote}
+                onChange={(e) => handleNoteChange(e.target.value)}
+                placeholder="Remember study everyday..."
+                rows={3}
+                className="w-full bg-[#FDFCF8] border border-[#EBE5DA] rounded-xl p-3 text-sm text-[#2c2c2c] placeholder-[#C4BCB3] focus:outline-none focus:ring-2 focus:ring-[#EBE5DA] resize-none leading-relaxed"
+              />
             </div>
           </div>
         </aside>

@@ -5,6 +5,7 @@ const SettingsSchema = new mongoose.Schema({
   whatsappNumber: { type: String, default: '' },
   whatsappQr: { type: String, default: '' },
   whatsappStatus: { type: String, default: 'disconnected' },
+  dashboardNote: { type: String, default: '' },
 });
 
 export default mongoose.models.Settings || mongoose.model('Settings', SettingsSchema);
