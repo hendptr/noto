@@ -218,6 +218,15 @@ export default function Dashboard() {
           )}
         </div>
         <div className="flex items-center space-x-6">
+          <Link href="/tasks" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
+            Reminders
+          </Link>
+          <Link href="/expenses" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
+            Expenses
+          </Link>
+          <Link href="/settings/whatsapp" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
+            WhatsApp Bot
+          </Link>
           <button onClick={() => setIsSearchOpen(true)} className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
             <Search className="w-5 h-5 mr-2" /> Search
           </button>
