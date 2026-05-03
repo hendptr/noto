@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { 
-  format, addMonths, subMonths, startOfMonth, endOfMonth, 
+import {
+  format, addMonths, subMonths, startOfMonth, endOfMonth,
   startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subYears, isSunday
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, X, Search, Download, BarChart2, Flame, Printer } from 'lucide-react';
@@ -30,7 +30,7 @@ export default function Dashboard() {
   const [onThisDayEntry, setOnThisDayEntry] = useState<any>(null);
   const [dashboardNote, setDashboardNote] = useState('');
   const [noteSaveTimer, setNoteSaveTimer] = useState<any>(null);
-  
+
   // Search State
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,7 +46,7 @@ export default function Dashboard() {
   });
 
   const isInitialLoad = useRef(true);
-  
+
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
   // Calendar logic
@@ -83,7 +83,7 @@ export default function Dashboard() {
       try {
         const res = await fetch(`/api/entries/${dateStr}`);
         const json = await res.json();
-        
+
         if (json.entry) {
           setData({
             happiness: json.entry.happiness || 5,
@@ -213,7 +213,7 @@ export default function Dashboard() {
   const getWordCount = () => {
     let allHtml = data.highlight + " " + data.kadai + " " + data.activities;
     data.customColumns.forEach(col => allHtml += " " + col.content);
-    
+
     // Safely strip HTML tags using regex for both SSR and Client
     const plainText = allHtml.replace(/<[^>]*>?/gm, '').trim();
     if (!plainText) return 0;
@@ -252,13 +252,13 @@ export default function Dashboard() {
       </nav>
 
       {/* Loading Indicator */}
-      <div 
-        className="fixed top-0 left-0 h-1 bg-[#8C7A6B] transition-all duration-500 ease-out z-50 print:hidden" 
-        style={{ width: isFetching ? '100%' : '0%', opacity: isFetching ? 1 : 0 }} 
+      <div
+        className="fixed top-0 left-0 h-1 bg-[#8C7A6B] transition-all duration-500 ease-out z-50 print:hidden"
+        style={{ width: isFetching ? '100%' : '0%', opacity: isFetching ? 1 : 0 }}
       />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-8 xl:px-0 grid grid-cols-1 lg:grid-cols-12 gap-12 pt-6">
-        
+
         {/* Left Column: Calendar (Hidden on Print) */}
         <aside className="lg:col-span-4 space-y-8 print:hidden">
           <div className="sticky top-12">
@@ -267,13 +267,13 @@ export default function Dashboard() {
                 {format(currentMonth, 'MMMM yyyy')}
               </h2>
               <div className="flex space-x-2">
-                <button 
+                <button
                   onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
                   className="p-2 rounded-full hover:bg-[#EBE5DA] transition-colors"
                 >
                   <ChevronLeft className="w-5 h-5 text-[#5a5a5a]" />
                 </button>
-                <button 
+                <button
                   onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
                   className="p-2 rounded-full hover:bg-[#EBE5DA] transition-colors"
                 >
@@ -288,7 +288,7 @@ export default function Dashboard() {
                   {day}
                 </div>
               ))}
-              
+
               {calendarDays.map((day, idx) => {
                 const isSelected = isSameDay(day, selectedDate);
                 const isCurrentMonth = isSameMonth(day, currentMonth);
@@ -296,7 +296,7 @@ export default function Dashboard() {
 
                 return (
                   <button
-                     key={`cal-${idx}`}
+                    key={`cal-${idx}`}
                     onClick={() => {
                       setSelectedDate(day);
                       if (!isSameMonth(day, currentMonth)) {
@@ -319,17 +319,17 @@ export default function Dashboard() {
 
             {/* Auto-save Status Indicator */}
             <div className="mt-12 p-4 rounded-xl bg-[#FDFCF8] border border-[#EBE5DA] flex items-center justify-center transition-opacity">
-               <span className="text-xs font-bold uppercase tracking-widest text-[#8C7A6B]">
-                 {saveStatus === 'saving' && 'Saving...'}
-                 {saveStatus === 'saved' && 'All changes saved'}
-                 {saveStatus === 'idle' && 'Auto-save is on'}
-               </span>
+              <span className="text-xs font-bold uppercase tracking-widest text-[#8C7A6B]">
+                {saveStatus === 'saving' && 'Saving...'}
+                {saveStatus === 'saved' && 'All changes saved'}
+                {saveStatus === 'idle' && 'Auto-save is on'}
+              </span>
             </div>
 
             {/* Sticky Note Widget */}
             <div className="mt-6 print:hidden">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-[#8C7A6B]">📌 Pinned Note</span>
+                <span className="text-xs font-bold uppercase tracking-widest text-[#8C7A6B]">Pinned Note</span>
                 {dashboardNote && (
                   <button
                     onClick={() => handleNoteChange('')}
@@ -352,7 +352,7 @@ export default function Dashboard() {
 
         {/* Right Column: The Diary Page (Takes full width on Print) */}
         <main className={clsx("lg:col-span-8 transition-opacity duration-500 print:col-span-12", isFetching && "opacity-40")}>
-          
+
           {/* On This Day Banner (Hidden on Print) */}
           {onThisDayEntry && !isFetching && (
             <div className="mb-8 p-4 rounded-xl border border-[#EBE5DA] bg-gradient-to-r from-[#FDFCF8] to-[#EBE5DA]/30 flex items-center justify-between print:hidden">
@@ -360,7 +360,7 @@ export default function Dashboard() {
                 <h4 className="text-xs font-bold text-[#8C7A6B] uppercase tracking-widest mb-1">On This Day</h4>
                 <p className="text-sm text-[#2c2c2c] italic">"{onThisDayEntry.highlight?.substring(0, 50) || onThisDayEntry.activities?.substring(0, 50) + '...'}"</p>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   const dateObj = new Date(onThisDayEntry.date + 'T00:00:00');
                   setSelectedDate(dateObj);
@@ -380,7 +380,7 @@ export default function Dashboard() {
                 <h4 className="text-xs font-bold text-[#8C7A6B] uppercase tracking-widest mb-1">Weekly Reflection</h4>
                 <p className="text-sm text-[#2c2c2c]">Take a moment to reflect on your past week.</p>
               </div>
-              <button 
+              <button
                 onClick={startWeeklyReflection}
                 className="text-xs font-bold text-[#FDFCF8] bg-[#8C7A6B] px-4 py-2 rounded-full hover:bg-[#2c2c2c] transition-colors whitespace-nowrap ml-4 uppercase tracking-widest"
               >
@@ -414,12 +414,12 @@ export default function Dashboard() {
                       onClick={() => setData({ ...data, happiness: num })}
                       className="relative flex items-center justify-center w-6 h-6 md:w-10 md:h-10 focus:outline-none group/btn"
                     >
-                      <div 
+                      <div
                         className={clsx(
                           "transition-all duration-300 rounded-full",
-                          data.happiness === num 
-                            ? "w-5 h-5 md:w-6 md:h-6 bg-[#8C7A6B] shadow-lg shadow-[#8C7A6B]/30 scale-110" 
-                            : data.happiness >= num 
+                          data.happiness === num
+                            ? "w-5 h-5 md:w-6 md:h-6 bg-[#8C7A6B] shadow-lg shadow-[#8C7A6B]/30 scale-110"
+                            : data.happiness >= num
                               ? "w-2.5 h-2.5 md:w-3 md:h-3 bg-[#8C7A6B]/40"
                               : "w-1.5 h-1.5 md:w-2 md:h-2 bg-[#EBE5DA] group-hover/btn:bg-[#8C7A6B]/20"
                         )}
@@ -557,7 +557,7 @@ export default function Dashboard() {
           <div className="w-full max-w-2xl bg-white shadow-2xl rounded-3xl overflow-hidden border border-[#EBE5DA]">
             <div className="p-4 border-b border-[#EBE5DA] flex items-center">
               <Search className="w-6 h-6 text-[#8C7A6B] mr-4" />
-              <input 
+              <input
                 type="text"
                 autoFocus
                 value={searchQuery}
@@ -565,14 +565,14 @@ export default function Dashboard() {
                 placeholder="Search memories, highlights, logs..."
                 className="w-full bg-transparent border-none text-xl text-[#2c2c2c] placeholder-[#C4BCB3] outline-none focus:ring-0"
               />
-              <button 
+              <button
                 onClick={() => { setIsSearchOpen(false); setSearchQuery(''); setSearchResults([]); }}
                 className="p-2 text-[#8C7A6B] hover:text-[#e74c3c] transition-colors rounded-full"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
-            
+
             <div className="max-h-[60vh] overflow-y-auto bg-[#FDFCF8] p-4 space-y-4">
               {isSearching && <p className="text-center text-[#8C7A6B] py-8 text-sm uppercase tracking-widest font-bold animate-pulse">Searching...</p>}
               {!isSearching && searchQuery && searchResults.length === 0 && (
