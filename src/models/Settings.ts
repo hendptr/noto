@@ -6,6 +6,7 @@ const SettingsSchema = new mongoose.Schema({
   whatsappQr: { type: String, default: '' },
   whatsappStatus: { type: String, default: 'disconnected' },
   dashboardNote: { type: String, default: '' },
+  timezone: { type: String, default: 'Asia/Tokyo' },
 });
 
 export default mongoose.models.Settings || mongoose.model('Settings', SettingsSchema);

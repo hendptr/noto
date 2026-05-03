@@ -10,6 +10,7 @@ const SettingsSchema = new mongoose.Schema({
   whatsappNumber: { type: String, default: '' },
   whatsappQr: { type: String, default: '' },
   whatsappStatus: { type: String, default: 'disconnected' },
+  timezone: { type: String, default: 'Asia/Tokyo' },
 });
 const Settings = mongoose.models.Settings || mongoose.model('Settings', SettingsSchema);
 
@@ -54,16 +55,28 @@ async function initDB() {
 
 async function processMessageWithGemini(message, client) {
   try {
-    const nowISO = new Date().toISOString();
+    // Read user's timezone from settings (auto-synced from their browser)
+    const settings = await Settings.findOne({ id: 'global' });
+    const userTz = settings?.timezone || 'Asia/Tokyo';
+
+    // Format current time in the user's local timezone
+    const now = new Date();
+    const localTimeStr = now.toLocaleString('en-US', {
+      timeZone: userTz,
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    });
 
     const textPrompt = `You are a helpful personal assistant bot for the Noto app. The user is sending you a message.
-Today's date and time is: ${nowISO} (UTC+7 Asia/Jakarta, so add 7 hours for local time context).
+The user's current local date and time is: ${localTimeStr} (timezone: ${userTz}).
 
 Analyze the message. It may contain ONE or MULTIPLE expenses or todos in a single sentence.
 
 Rules:
 - ALWAYS return a valid JSON array, even for just one item.
-- Parse natural language dates like "today", "yesterday", "last night", "tadi", "kemarin", specific dates, etc. and return as an ISO 8601 date string. Default to today if not mentioned.
+- Parse natural language dates like "today", "yesterday", "last night", "tadi", "kemarin", specific dates, etc.
+- IMPORTANT: All dates/times MUST be returned as ISO 8601 UTC strings. When the user says a time like "11 AM", that means 11 AM in their local timezone (${userTz}). You MUST convert it to UTC before returning. For example, if the user is in Asia/Tokyo (UTC+9) and says "11 AM", the UTC time would be 02:00:00.000Z.
+- Default to today if date is not mentioned.
 - For multiple spending items in one message, create ONE expense entry per item.
 - Detect currency: Yen/¥/JPY → "JPY", Rupiah/Rp/IDR → "IDR". Default to "JPY" if unclear (user lives in Japan).
 
@@ -71,7 +84,7 @@ Return ONLY a raw JSON array (no markdown, no backticks) structured exactly like
 [
   { "type": "expense", "amount": 500, "description": "Cake at Lawson", "category": "Food", "currency": "JPY", "date": "2026-05-02T00:00:00.000Z" },
   { "type": "expense", "amount": 300, "description": "Milk", "category": "Food", "currency": "JPY", "date": "2026-05-02T00:00:00.000Z" },
-  { "type": "todo", "task": "Buy groceries", "dueDate": "2026-05-03T09:00:00.000Z", "recurrence": "none" },
+  { "type": "todo", "task": "Buy groceries", "dueDate": "2026-05-03T02:00:00.000Z", "recurrence": "none" },
   { "type": "reply", "message": "✅ Saved today's spending:\n• Coffee and bread — ¥450 (Food)\n• Transport — ¥1,000 (Transport)\nTotal: ¥1,450 for today!" }
 ]
 
@@ -86,13 +99,13 @@ User message: "${message.body}"`;
     if (message.hasMedia) {
       const media = await message.downloadMedia();
       if (media.mimetype.startsWith('image/')) {
-        const imagePrompt = `You are an AI expense tracker. Today's date and time is: ${nowISO}.
+        const imagePrompt = `You are an AI expense tracker. The user's current local date and time is: ${localTimeStr} (timezone: ${userTz}).
 Read this receipt/image. Extract:
 - Total amount paid
 - Store/vendor name as description
 - Best category (Food/Transport/Shopping/Utilities/Other)
 - Currency: Yen/¥ → "JPY", Rupiah/Rp → "IDR". Default "JPY" if unclear.
-- Date: use the date printed on the receipt if visible, otherwise today.
+- Date: use the date printed on the receipt if visible, otherwise today. Return as ISO 8601 UTC string (convert from ${userTz} to UTC).
 
 Return ONLY a raw JSON array (no markdown):
 [

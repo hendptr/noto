@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Lora } from "next/font/google";
 import "./globals.css";
+import TimezoneSync from "@/components/TimezoneSync";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({
       className={`${inter.variable} ${lora.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans bg-[#FDFCF8] text-[#2C2C2C]">
+        <TimezoneSync />
         {children}
       </body>
     </html>
