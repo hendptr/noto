@@ -27,7 +27,7 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${lora.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans bg-[#FDFCF8] text-[#2C2C2C] selection:bg-[#EBE5DA] selection:text-[#2C2C2C]">
+      <body className="min-h-full flex flex-col font-sans bg-[#FDFCF8] text-[#2C2C2C]">
         {children}
       </body>
     </html>
