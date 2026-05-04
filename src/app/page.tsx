@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   format, addMonths, subMonths, startOfMonth, endOfMonth,
-  startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subYears, isSunday
+  startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subYears, isSunday, differenceInDays
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, X, Search, Download, BarChart2, Flame, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Search, Download, BarChart2, Flame, Printer, Calendar } from 'lucide-react';
 import clsx from 'clsx';
 import Link from 'next/link';
 import RichTextEditor from '@/components/RichTextEditor';
@@ -37,6 +37,8 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  const [milestones, setMilestones] = useState<any[]>([]);
+
   const [data, setData] = useState<EntryData>({
     happiness: 5,
     highlight: '',
@@ -60,6 +62,10 @@ export default function Dashboard() {
     // Fetch dashboard note
     fetch('/api/settings/note').then(res => res.json()).then(json => {
       if (json.dashboardNote !== undefined) setDashboardNote(json.dashboardNote);
+    });
+
+    fetch('/api/milestones').then(res => res.json()).then(json => {
+      setMilestones(json.filter((m: any) => new Date(m.date) >= new Date()).slice(0, 3));
     });
   }, []);
 
@@ -230,6 +236,9 @@ export default function Dashboard() {
           <Link href="/tasks" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
             Reminders
           </Link>
+          <Link href="/milestones" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
+            Milestones
+          </Link>
           <Link href="/expenses" className="text-[#8C7A6B] hover:text-[#2C2C2C] transition-colors flex items-center text-sm font-medium">
             Expenses
           </Link>
@@ -347,6 +356,38 @@ export default function Dashboard() {
                 className="w-full bg-[#FDFCF8] border border-[#EBE5DA] rounded-xl p-3 text-sm text-[#2c2c2c] placeholder-[#C4BCB3] focus:outline-none focus:ring-2 focus:ring-[#EBE5DA] resize-none leading-relaxed"
               />
             </div>
+
+            {/* Milestones Widget */}
+            {milestones.length > 0 && (
+              <div className="mt-8 print:hidden">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold uppercase tracking-widest text-[#8C7A6B]">Upcoming Milestones</span>
+                  <Link href="/milestones" className="text-[10px] text-[#C4BCB3] hover:text-[#8C7A6B] transition-colors uppercase tracking-widest font-bold">View All</Link>
+                </div>
+                <div className="space-y-3">
+                  {milestones.map((m: any) => {
+                    const daysLeft = differenceInDays(new Date(m.date), new Date());
+                    return (
+                      <div key={m._id} className="bg-white border border-[#EBE5DA] rounded-xl p-3 flex items-center justify-between shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className={clsx(
+                            "w-8 h-8 rounded-lg flex items-center justify-center text-sm",
+                            daysLeft < 7 ? "bg-red-50 text-red-500" : "bg-[#FDFCF8] text-[#8C7A6B]"
+                          )}>
+                            <Calendar className="w-4 h-4" />
+                          </div>
+                          <span className="text-sm font-medium text-[#2c2c2c] truncate max-w-[120px]">{m.title}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-lg font-serif text-[#1a1a1a] leading-none">{daysLeft}</span>
+                          <span className="text-[8px] font-black text-[#8C7A6B] uppercase tracking-tighter block">days</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
 

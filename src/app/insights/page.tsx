@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import Link from 'next/link';
-import { ArrowLeft, BarChart2 } from 'lucide-react';
+import { ArrowLeft, BarChart2, TrendingDown, PieChart, Wallet } from 'lucide-react';
 import { format } from 'date-fns';
+
+const COLORS = ['#8C7A6B', '#C4BCB3', '#EBE5DA', '#2C2C2C', '#5a5a5a'];
 
 export default function InsightsPage() {
   const [data, setData] = useState<any>(null);
@@ -60,6 +62,51 @@ export default function InsightsPage() {
                   Keep writing to unlock more insights
                 </div>
               )}
+            </div>
+
+            {/* Expense Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="p-8 rounded-3xl border border-[#EBE5DA] bg-white shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                  <Wallet className="w-5 h-5 text-[#8C7A6B]" />
+                  <h3 className="text-xs font-bold text-[#8C7A6B] uppercase tracking-widest">30-Day Spending</h3>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#8C7A6B] mb-1">Total JPY</p>
+                    <p className="text-3xl font-serif text-[#1a1a1a]">¥ {data?.expenses?.totalJPY.toLocaleString()}</p>
+                  </div>
+                  <div className="h-px bg-[#EBE5DA]" />
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#8C7A6B] mb-1">Total IDR</p>
+                    <p className="text-3xl font-serif text-[#1a1a1a]">Rp {data?.expenses?.totalIDR.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-8 rounded-3xl border border-[#EBE5DA] bg-white shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                  <PieChart className="w-5 h-5 text-[#8C7A6B]" />
+                  <h3 className="text-xs font-bold text-[#8C7A6B] uppercase tracking-widest">Category Split (JPY)</h3>
+                </div>
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data?.expenses?.categoryBreakdown.slice(0, 5)} layout="vertical">
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#8C7A6B', fontSize: 10, fontWeight: 'bold' }} width={70} />
+                      <Tooltip 
+                         cursor={{fill: 'transparent'}}
+                         contentStyle={{ backgroundColor: '#2C2C2C', borderRadius: '12px', border: 'none', color: '#FDFCF8' }}
+                      />
+                      <Bar dataKey="JPY" radius={[0, 4, 4, 0]}>
+                        {data?.expenses?.categoryBreakdown.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
 
             {/* Happiness Chart */}
